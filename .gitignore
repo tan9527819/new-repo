@@ -1,0 +1,34 @@
+# Byte-compiled / virtualenv
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+.env
+.env.*
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# Editors
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# macOS
+.DS_Store
+
+# Data files (do not commit large datasets)
+data/
+*.csv
+*.sqlite
+
+# Jupyter
+.ipynb_checkpoints
+
+# Logs
+logs/
+*.log
+

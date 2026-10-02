@@ -1,0 +1,11 @@
+# Project Python dependencies - add libraries as needed
+requests
+pandas
+numpy
+scipy
+scikit-learn
+jupyter
+matplotlib
+sqlalchemy
+python-dotenv
+tqdm
