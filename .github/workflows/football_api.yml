@@ -3,7 +3,7 @@ name: Football API Auto Fetch
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 2 * * *"
+    - cron: "0 */6 * * *"
 
 permissions:
   contents: write
@@ -11,7 +11,6 @@ permissions:
 jobs:
   fetch:
     runs-on: ubuntu-latest
-    environment: football-api
 
     steps:
       - name: Checkout
@@ -22,7 +21,12 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Fetch Football Data
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Fetch Football API
         env:
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
         run: |
@@ -50,50 +54,3 @@ jobs:
             git commit -m "data: update football fixtures"
             git push
           fi
-name: Football API Auto Fetch
-
-on:
-  workflow_dispatch:
-  schedule:
-    - cron: "0 */6 * * *"
-
-jobs:
-  fetch:
-    runs-on: ubuntu-latest
-    environment: football-api
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install requests
-
-      - name: Fetch Football API
-        env:
-          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
-        run: |
-          python - <<'PY'
-          import os
-          import requests
-
-          key = os.environ["API_FOOTBALL_KEY"]
-
-          url = "https://v3.football.api-sports.io/status"
-
-          response = requests.get(
-              url,
-              headers={"x-apisports-key": key},
-              timeout=30
-          )
-
-          print("HTTP:", response.status_code)
-          print(response.text)
-          PY
