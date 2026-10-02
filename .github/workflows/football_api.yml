@@ -13,6 +13,8 @@ jobs:
     name: Fetch Football API Data
     runs-on: ubuntu-latest
 
+    environment: football-api
+
     env:
       API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
 
@@ -28,7 +30,7 @@ jobs:
           if [ -z "$API_FOOTBALL_KEY" ]; then
             echo "错误：API_FOOTBALL_KEY 没有读取到"
             echo "请检查 GitHub Settings -> Secrets and variables -> Actions"
-            echo "确认 Repository secrets 中存在：API_FOOTBALL_KEY"
+            echo "确认 API_FOOTBALL_KEY 已正确设置"
             exit 1
           fi
 
@@ -42,6 +44,8 @@ jobs:
       - name: Install dependencies
         shell: bash
         run: |
+          set -e
+
           python -m pip install --upgrade pip
 
           if [ -f requirements.txt ]; then
@@ -51,6 +55,8 @@ jobs:
       - name: Fetch Football API
         shell: bash
         run: |
+          set -e
+
           python - <<'PY'
           import os
           import json
@@ -65,14 +71,18 @@ jobs:
 
           today = datetime.date.today()
 
-          # 抓取前3天、今天、后3天
+          # Football API 免费套餐：
+          # 不再请求过去日期。
+          # 只抓取：今天、明天、后天。
           dates = [
               today + datetime.timedelta(days=i)
-              for i in range(-3, 4)
+              for i in range(0, 3)
           ]
 
           output_dir = "data/api_football"
           os.makedirs(output_dir, exist_ok=True)
+
+          success_count = 0
 
           for date in dates:
               date_str = date.isoformat()
@@ -89,6 +99,7 @@ jobs:
                   }
               )
 
+              print("=" * 60)
               print(f"正在抓取：{date_str}")
 
               try:
@@ -96,30 +107,62 @@ jobs:
                       request,
                       timeout=60
                   ) as response:
-                      data = json.loads(
-                          response.read().decode("utf-8")
+
+                      status_code = response.status
+
+                      body = response.read().decode(
+                          "utf-8"
                       )
+
+                      data = json.loads(body)
+
+                  print(f"HTTP 状态：{status_code}")
 
               except urllib.error.HTTPError as e:
                   error_body = e.read().decode(
                       "utf-8",
                       errors="replace"
                   )
+
                   print(f"API HTTP 错误：{e.code}")
                   print(error_body)
-                  raise
+
+                  raise SystemExit(
+                      f"Football API 请求失败：{date_str}"
+                  )
+
+              except urllib.error.URLError as e:
+                  print(f"网络请求失败：{e}")
+
+                  raise SystemExit(
+                      f"Football API 网络错误：{date_str}"
+                  )
 
               except Exception as e:
                   print(f"请求失败：{e}")
-                  raise
+
+                  raise SystemExit(
+                      f"Football API 未知错误：{date_str}"
+                  )
 
               errors = data.get("errors")
 
               if errors:
-                  print(f"API 返回错误：{errors}")
-                  raise SystemExit(1)
+                  print("Football API 返回错误：")
+                  print(json.dumps(
+                      errors,
+                      ensure_ascii=False,
+                      indent=2
+                  ))
 
-              results = data.get("response", [])
+                  raise SystemExit(
+                      f"Football API 数据错误：{date_str}"
+                  )
+
+              results = data.get(
+                  "response",
+                  []
+              )
 
               output_file = (
                   f"{output_dir}/fixtures_{date_str}.json"
@@ -130,6 +173,7 @@ jobs:
                   "w",
                   encoding="utf-8"
               ) as f:
+
                   json.dump(
                       data,
                       f,
@@ -138,22 +182,87 @@ jobs:
                   )
 
               print(
-                  f"{date_str} 抓取完成，比赛数量："
-                  f"{len(results)}"
+                  f"{date_str} 抓取完成"
               )
 
-          print("Football API 数据抓取完成")
+              print(
+                  f"比赛数量：{len(results)}"
+              )
+
+              print(
+                  f"保存文件：{output_file}"
+              )
+
+              success_count += 1
+
+          print("=" * 60)
+          print(
+              f"Football API 数据抓取完成，"
+              f"成功：{success_count}/{len(dates)}"
+          )
+          print("=" * 60)
+
           PY
 
       - name: Check generated files
         shell: bash
         run: |
+          set -e
+
           echo "生成的数据文件："
 
-          find data/api_football \
-            -type f \
-            -name "*.json" \
-            -print
+          if [ -d "data/api_football" ]; then
+            find data/api_football \
+              -type f \
+              -name "*.json" \
+              -print
+          else
+            echo "错误：data/api_football 目录不存在"
+            exit 1
+          fi
+
+      - name: Validate JSON files
+        shell: bash
+        run: |
+          set -e
+
+          echo "开始检查 JSON 数据文件..."
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          files = list(
+              Path("data/api_football").glob("*.json")
+          )
+
+          if not files:
+              raise SystemExit(
+                  "错误：没有找到 JSON 数据文件"
+              )
+
+          for file in files:
+              print(f"检查：{file}")
+
+              with file.open(
+                  "r",
+                  encoding="utf-8"
+              ) as f:
+                  data = json.load(f)
+
+              if not isinstance(data, dict):
+                  raise SystemExit(
+                      f"JSON 格式错误：{file}"
+                  )
+
+              print(
+                  f"  response 数量："
+                  f"{len(data.get('response', []))}"
+              )
+
+          print("JSON 数据检查通过")
+
+          PY
 
       - name: Commit data
         shell: bash
@@ -161,16 +270,18 @@ jobs:
           set -e
 
           git config user.name "github-actions[bot]"
+
           git config user.email \
             "41898282+github-actions[bot]@users.noreply.github.com"
 
-          echo "准备提交 API 数据"
+          echo "准备提交 API 数据..."
 
-          # data 可能被 .gitignore 忽略
+          # data 目录可能被 .gitignore 忽略
           # 使用 -f 强制加入 Git
           git add -f data/api_football/
 
           echo "当前待提交文件："
+
           git status --short
 
           if git diff --cached --quiet; then
@@ -178,6 +289,9 @@ jobs:
             exit 0
           fi
 
-          git commit -m "chore: update football API data"
+          git commit \
+            -m "chore: update football API data"
 
           git push
+
+          echo "数据已经成功提交并推送到 main"
