@@ -1,0 +1,46 @@
+name: Today Football Analysis
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * *'
+
+jobs:
+  analyze-today:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Run football today analysis
+        env:
+          PYTHONPATH: src
+        run: |
+          python - <<'PY'
+          from datetime import datetime, timedelta, timezone
+          from pathlib import Path
+          import subprocess
+          import sys
+
+          tz = timezone(timedelta(hours=8))
+          today = datetime.now(tz).strftime('%Y-%m-%d')
+          fixture = Path('data/api_football') / f'fixtures_{today}.json'
+
+          if fixture.exists():
+              print(f'Found fixture file: {fixture}')
+              subprocess.run([sys.executable, '-m', 'football_analysis.today_analysis'], check=True)
+          else:
+              print(f'No fixture file for {today}; skipping analysis for now.')
+          PY
