@@ -26,6 +26,6 @@ def test_find_similar_odds():
         'league':['L','L','L'],
         'timestamp':['2026-01-01T00:00:00','2026-01-02T00:00:00','2026-01-03T00:00:00']
     })
-    target = {'home_odds':1.9,'draw_odds':3.4,'away_odds':4.2,'handicap':0.0,'bookmaker':'bet365','timestamp':datetime.datetime(2026,1,1,0,0),'league':'L'}
+    target = {'home_odds':1.9,'draw_odds':3.4,'away_odds':4.2,'handicap':0.0,'bookmaker':'bet365','timestamp':datetime(2026,1,1,0,0),'league':'L'}
     res = find_similar_odds_from_df(df, target, top_k=2)
     assert len(res) == 2
