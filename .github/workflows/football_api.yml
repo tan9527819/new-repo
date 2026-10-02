@@ -11,6 +11,7 @@ permissions:
 jobs:
   fetch:
     runs-on: ubuntu-latest
+    environment: football-api
 
     steps:
       - name: Checkout
@@ -32,30 +33,35 @@ jobs:
         run: |
           DATE=$(date -u +%Y-%m-%d)
 
-          mkdir -p 数据
-
+          echo "================================"
           echo "开始抓取日期: ${DATE}"
+          echo "================================"
 
           if [ -z "$API_FOOTBALL_KEY" ]; then
             echo "错误：API_FOOTBALL_KEY 没有读取到"
             exit 1
           fi
 
+          mkdir -p 数据
+
           curl \
             --request GET \
             --url "https://v3.football.api-sports.io/fixtures?date=${DATE}" \
             --header "x-apisports-key: ${API_FOOTBALL_KEY}" \
             --output "数据/fixtures_${DATE}.json" \
-            --write-out "HTTP_STATUS=%{http_code}\n" \
+            --write-out "\nHTTP_STATUS=%{http_code}\n" \
             --silent \
             --show-error
 
-          echo ""
-          echo "API 返回内容："
-          cat "数据/fixtures_${DATE}.json"
+          echo "================================"
+          echo "API 数据已获取"
+          echo "================================"
 
-          echo ""
-          echo "已抓取 ${DATE} 的比赛数据"
+          echo "数据文件："
+          ls -lh "数据/fixtures_${DATE}.json"
+
+          echo "数据预览："
+          head -c 1000 "数据/fixtures_${DATE}.json"
 
       - name: Check API response
         run: |
@@ -67,7 +73,6 @@ jobs:
           fi
 
           echo "数据文件检查通过"
-          ls -lh "数据/fixtures_${DATE}.json"
 
       - name: Commit Data
         run: |
