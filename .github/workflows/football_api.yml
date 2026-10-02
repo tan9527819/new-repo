@@ -2,6 +2,7 @@ name: Football API Auto Fetch
 
 on:
   workflow_dispatch:
+
   schedule:
     - cron: "0 */6 * * *"
 
@@ -13,6 +14,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -32,8 +34,11 @@ jobs:
         env:
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
         run: |
-          if [ -z "$API_FOOTBALL_KEY" ]; then
-            echo "错误：API_FOOTBALL_KEY 没有读取到"
+          set -e
+
+          if [ -z "${API_FOOTBALL_KEY:-}" ]; then
+            echo "错误：没有读取到 API_FOOTBALL_KEY"
+            echo "请检查 GitHub Repository Secrets"
             exit 1
           fi
 
@@ -43,26 +48,60 @@ jobs:
         env:
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
         run: |
+          set -euo pipefail
+
           DATE=$(date -u +%Y-%m-%d)
+          OUTPUT="数据/fixtures_${DATE}.json"
 
           echo "开始抓取日期：$DATE"
 
           mkdir -p 数据
 
-          curl --fail-with-body \
+          curl \
+            --fail-with-body \
+            --silent \
+            --show-error \
             --request GET \
             --url "https://v3.football.api-sports.io/fixtures?date=${DATE}" \
             --header "x-apisports-key: ${API_FOOTBALL_KEY}" \
             --header "Accept: application/json" \
-            --output "数据/fixtures_${DATE}.json"
+            --output "$OUTPUT"
 
-          echo "抓取成功"
-          echo "文件：数据/fixtures_${DATE}.json"
+          if [ ! -s "$OUTPUT" ]; then
+            echo "错误：API 返回数据为空"
+            exit 1
+          fi
+
+          echo "API 数据抓取成功"
+
+          python - "$OUTPUT" <<'PY'
+          import json
+          import sys
+
+          filename = sys.argv[1]
+
+          with open(filename, "r", encoding="utf-8") as f:
+              data = json.load(f)
+
+          if data.get("errors"):
+              print("API 返回错误：")
+              print(data["errors"])
+              sys.exit(1)
+
+          matches = data.get("response", [])
+
+          print(f"抓取比赛数量：{len(matches)}")
+          print(f"保存文件：{filename}")
+          PY
 
       - name: Commit Data
         run: |
+          set -e
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git pull --rebase origin main
 
           git add 数据/
 
@@ -73,6 +112,4 @@ jobs:
 
           git commit -m "data: update football fixtures"
 
-          git pull --rebase origin main
-
-          git push origin main
+          git push origin HEAD:main
