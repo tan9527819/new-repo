@@ -11,10 +11,8 @@ class MatchRecord:
     match_id: Optional[str]
     date: Optional[Any]
     league: Optional[str]
-    season: Optional[Any]
     home_team: Optional[str]
     away_team: Optional[str]
-    status: Optional[str]
     home_odds: Optional[float]
     draw_odds: Optional[float]
     away_odds: Optional[float]
@@ -22,6 +20,8 @@ class MatchRecord:
     handicap_home_odds: Optional[float]
     handicap_away_odds: Optional[float]
     source: Optional[str]
+    season: Optional[Any] = None
+    status: Optional[str] = None
 
     def to_dict(self):
         return {
