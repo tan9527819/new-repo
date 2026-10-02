@@ -1,11 +1,6 @@
 """
-基于 pandas 的历史数据仓库接口（暂时不使用数据库）。
-
-提供：
-- load_matches(path=None, n=None)
-- find_similar_matches(target_odds, top_k=10)
-- find_same_odds(odds_tuple)
-- get_recent_results(n=50)
+Repository mapping between dataframe rows and MatchRecord dataclass.
+Fixed to include season and status fields.
 """
 from typing import Optional, List, Tuple
 import os
@@ -22,8 +17,10 @@ def _df_to_matchrecord(row: pd.Series) -> MatchRecord:
         match_id=str(row.get('match_id', None)) if 'match_id' in row.index else None,
         date=row.get('date', None),
         league=row.get('league', None) if 'league' in row.index else None,
+        season=row.get('season', None) if 'season' in row.index else None,
         home_team=row.get('home_team', None),
         away_team=row.get('away_team', None),
+        status=row.get('status', None) if 'status' in row.index else None,
         home_odds=row.get('home_odds', None),
         draw_odds=row.get('draw_odds', None),
         away_odds=row.get('away_odds', None),
@@ -58,9 +55,10 @@ def find_similar_matches(target_odds: Tuple[float, float, float], path: Optional
     if df.empty:
         return []
     X = df[['home_odds', 'draw_odds', 'away_odds']].to_numpy(dtype=float)
-    target = np.array(target_odds, dtype=float)
-    dists = np.linalg.norm(X - target, axis=1)
-    idx = np.argsort(dists)[:top_k]
+    import numpy as _np
+    target = _np.array(target_odds, dtype=float)
+    dists = _np.linalg.norm(X - target, axis=1)
+    idx = _np.argsort(dists)[:top_k]
     results = df.iloc[idx].copy()
     results['distance'] = dists[idx]
     return results

@@ -1,26 +1,41 @@
 """
 CSV schema and mapping utilities.
 Defines canonical columns and provides a mapping layer from arbitrary CSV columns.
+Canonical names use consistent home_odds/draw_odds/away_odds naming.
 """
 from typing import Dict, List
 import pandas as pd
 
 CANONICAL_COLUMNS = [
-    'match_id', 'fixture_id', 'date', 'league', 'season', 'home_team', 'away_team',
-    'bookmaker', 'market', 'selection', 'line', 'odds', 'timestamp',
-    'result', 'home_score', 'away_score'
+    'match_id', 'fixture_id', 'date', 'league', 'season', 'home_team', 'away_team', 'status',
+    # result fields
+    'result', 'home_score', 'away_score',
+    # 1X2 snapshot
+    'bookmaker', 'market', 'selection', 'home_odds', 'draw_odds', 'away_odds', 'timestamp',
+    # handicap snapshot
+    'handicap', 'handicap_home_odds', 'handicap_away_odds',
 ]
 
 # common alternative names mapped to canonical
 COLUMN_ALIASES = {
+    # dates
     'match_date': 'date', 'kickoff': 'date', 'datetime': 'date',
-    'home': 'home_team', 'homeName': 'home_team', 'away': 'away_team', 'awayName': 'away_team',
-    '1': 'home_odds', 'X': 'draw_odds', '2': 'away_odds',
-    'home_odds': 'odds_home', 'draw_odds': 'odds_draw', 'away_odds': 'odds_away',
+    # teams
+    'home': 'home_team', 'homename': 'home_team', 'away': 'away_team', 'awayname': 'away_team',
+    # 1X2 shorthand
+    '1': 'home_odds', 'x': 'draw_odds', '2': 'away_odds',
+    # common odds column variants mapped to canonical
+    'odds_home': 'home_odds', 'odds_draw': 'draw_odds', 'odds_away': 'away_odds',
+    'home_odds': 'home_odds', 'draw_odds': 'draw_odds', 'away_odds': 'away_odds',
+    # ids
     'fixture_id': 'fixture_id', 'match_id': 'match_id',
+    # others
     'bookmaker': 'bookmaker', 'market': 'market', 'selection': 'selection',
-    'line': 'line', 'handicap': 'line', 'odds': 'odds', 'timestamp': 'timestamp',
-    'result': 'result', 'home_score': 'home_score', 'away_score': 'away_score'
+    'line': 'handicap', 'handicap': 'handicap', 'spread': 'handicap',
+    'odds': 'home_odds',  # ambiguous: interpreted as home_odds when no selection provided
+    'timestamp': 'timestamp',
+    'result': 'result', 'home_score': 'home_score', 'away_score': 'away_score',
+    'season': 'season', 'status': 'status', 'league': 'league',
 }
 
 
