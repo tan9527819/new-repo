@@ -1,5 +1,8 @@
 name: Tests
 
+env:
+  PYTHONPATH: src
+
 on:
   push:
     branches: ["main"]
