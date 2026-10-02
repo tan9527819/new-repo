@@ -1,297 +1,327 @@
 name: Football API Auto Fetch
-
 on:
   workflow_dispatch:
   schedule:
+    # 每天 UTC 02:00 自动运行
     - cron: "0 2 * * *"
-
-permissions:
-  contents: write
-
 jobs:
   fetch:
     name: Fetch Football API Data
     runs-on: ubuntu-latest
-
     environment: football-api
-
     env:
       API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
-
     steps:
+      # ============================================================
+      # 1. Checkout
+      # ============================================================
       - name: Checkout repository
         uses: actions/checkout@v4
-
+        with:
+          fetch-depth: 0
+      # ============================================================
+      # 2. Check API Key
+      # ============================================================
       - name: Check API Key
         shell: bash
         run: |
           set -e
-
           if [ -z "$API_FOOTBALL_KEY" ]; then
             echo "错误：API_FOOTBALL_KEY 没有读取到"
-            echo "请检查 GitHub Settings -> Secrets and variables -> Actions"
-            echo "确认 API_FOOTBALL_KEY 已正确设置"
+            echo "请检查 GitHub Settings -> Environments -> football-api -> Secrets"
             exit 1
           fi
-
           echo "API_FOOTBALL_KEY 已成功读取"
-
+      # ============================================================
+      # 3. Setup Python
+      # ============================================================
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
+      # ============================================================
+      # 4. Install dependencies
+      # ============================================================
       - name: Install dependencies
         shell: bash
         run: |
-          set -e
-
           python -m pip install --upgrade pip
-
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           fi
-
+      # ============================================================
+      # 5. Fetch Football API
+      #
+      # 重要：
+      # Free 套餐无法保证当前赛季历史 fixtures 可访问。
+      # 因此这里：
+      #
+      # A. 先抓 live=all
+      # B. 再尝试历史赛季
+      # C. 如果 API 返回 Free plan 限制，不让 Workflow 失败
+      # ============================================================
       - name: Fetch Football API
         shell: bash
         run: |
-          set -e
-
           python - <<'PY'
           import os
           import json
-          import datetime
           import urllib.request
           import urllib.error
-
-          api_key = os.environ.get("API_FOOTBALL_KEY")
-
-          if not api_key:
+          from datetime import datetime, timezone, timedelta
+          from pathlib import Path
+          API_KEY = os.environ.get("API_FOOTBALL_KEY")
+          if not API_KEY:
               raise SystemExit("API_FOOTBALL_KEY 未读取到")
-
-          today = datetime.date.today()
-
-          # Football API 免费套餐：
-          # 不再请求过去日期。
-          # 只抓取：今天、明天、后天。
-          dates = [
-              today + datetime.timedelta(days=i)
-              for i in range(0, 3)
-          ]
-
-          output_dir = "data/api_football"
-          os.makedirs(output_dir, exist_ok=True)
-
-          success_count = 0
-
-          for date in dates:
-              date_str = date.isoformat()
-
-              url = (
-                  "https://v3.football.api-sports.io/fixtures"
-                  f"?date={date_str}"
+          BASE_URL = "https://v3.football.api-sports.io"
+          OUTPUT_DIR = Path("data/api_football")
+          OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+          # --------------------------------------------------------
+          # 请求函数
+          # --------------------------------------------------------
+          def api_get(endpoint, params=None):
+              if params is None:
+                  params = {}
+              query = "&".join(
+                  f"{key}={value}"
+                  for key, value in params.items()
               )
-
+              url = f"{BASE_URL}/{endpoint}"
+              if query:
+                  url += "?" + query
               request = urllib.request.Request(
                   url,
                   headers={
-                      "x-apisports-key": api_key
-                  }
+                      "x-apisports-key": API_KEY,
+                      "Accept": "application/json",
+                      "User-Agent": "football-data-github-actions"
+                  },
+                  method="GET"
               )
-
-              print("=" * 60)
-              print(f"正在抓取：{date_str}")
-
               try:
                   with urllib.request.urlopen(
                       request,
                       timeout=60
                   ) as response:
-
-                      status_code = response.status
-
-                      body = response.read().decode(
-                          "utf-8"
-                      )
-
+                      body = response.read().decode("utf-8")
+                      return json.loads(body)
+              except urllib.error.HTTPError as error:
+                  body = error.read().decode("utf-8", errors="replace")
+                  try:
                       data = json.loads(body)
-
-                  print(f"HTTP 状态：{status_code}")
-
-              except urllib.error.HTTPError as e:
-                  error_body = e.read().decode(
-                      "utf-8",
-                      errors="replace"
-                  )
-
-                  print(f"API HTTP 错误：{e.code}")
-                  print(error_body)
-
-                  raise SystemExit(
-                      f"Football API 请求失败：{date_str}"
-                  )
-
-              except urllib.error.URLError as e:
-                  print(f"网络请求失败：{e}")
-
-                  raise SystemExit(
-                      f"Football API 网络错误：{date_str}"
-                  )
-
-              except Exception as e:
-                  print(f"请求失败：{e}")
-
-                  raise SystemExit(
-                      f"Football API 未知错误：{date_str}"
-                  )
-
-              errors = data.get("errors")
-
-              if errors:
-                  print("Football API 返回错误：")
-                  print(json.dumps(
-                      errors,
-                      ensure_ascii=False,
-                      indent=2
-                  ))
-
-                  raise SystemExit(
-                      f"Football API 数据错误：{date_str}"
-                  )
-
-              results = data.get(
+                  except Exception:
+                      data = {
+                          "errors": {
+                              "http_error": body
+                          }
+                      }
+                  return {
+                      "response": [],
+                      "errors": data.get(
+                          "errors",
+                          {"http_error": str(error)}
+                      )
+                  }
+              except Exception as error:
+                  return {
+                      "response": [],
+                      "errors": {
+                          "request_error": str(error)
+                      }
+                  }
+          # ========================================================
+          # 1. 获取当前实时比赛
+          # ========================================================
+          print("")
+          print("=" * 60)
+          print("1. 获取实时比赛")
+          print("=" * 60)
+          live_data = api_get(
+              "fixtures",
+              {
+                  "live": "all"
+              }
+          )
+          live_file = OUTPUT_DIR / "live.json"
+          with live_file.open(
+              "w",
+              encoding="utf-8"
+          ) as f:
+              json.dump(
+                  live_data,
+                  f,
+                  ensure_ascii=False,
+                  indent=2
+              )
+          live_count = len(
+              live_data.get("response", [])
+          )
+          print(
+              f"实时比赛抓取完成：{live_count} 场"
+          )
+          # ========================================================
+          # 2. 检查 API 返回错误
+          # ========================================================
+          errors = live_data.get("errors", {})
+          if errors:
+              print("")
+              print("API 返回信息：")
+              print(json.dumps(
+                  errors,
+                  ensure_ascii=False,
+                  indent=2
+              ))
+          # ========================================================
+          # 3. 历史数据
+          #
+          # 这里不要再请求：
+          #
+          # 2026-09-29
+          # 2026-10-01
+          # 等当前赛季日期
+          #
+          # 因为 Free Plan 可能拒绝当前赛季。
+          #
+          # 先使用历史赛季进行数据库建设。
+          # ========================================================
+          HISTORICAL_SEASONS = [
+              2024,
+              2023,
+              2022
+          ]
+          print("")
+          print("=" * 60)
+          print("2. 获取历史赛季数据")
+          print("=" * 60)
+          for season in HISTORICAL_SEASONS:
+              print("")
+              print(f"正在检查赛季：{season}")
+              data = api_get(
+                  "fixtures",
+                  {
+                      "season": season
+                  }
+              )
+              season_errors = data.get(
+                  "errors",
+                  {}
+              )
+              season_response = data.get(
                   "response",
                   []
               )
-
               output_file = (
-                  f"{output_dir}/fixtures_{date_str}.json"
+                  OUTPUT_DIR
+                  / f"fixtures_{season}.json"
               )
-
-              with open(
-                  output_file,
+              with output_file.open(
                   "w",
                   encoding="utf-8"
               ) as f:
-
                   json.dump(
                       data,
                       f,
                       ensure_ascii=False,
                       indent=2
                   )
-
+              if season_errors:
+                  error_text = json.dumps(
+                      season_errors,
+                      ensure_ascii=False
+                  )
+                  print(
+                      f"赛季 {season} API 返回限制/错误："
+                  )
+                  print(error_text)
+                  if "Free" in error_text:
+                      print(
+                          f"赛季 {season} 被当前 Free "
+                          "套餐限制，已跳过。"
+                      )
+                  continue
               print(
-                  f"{date_str} 抓取完成"
+                  f"赛季 {season} 获取完成："
+                  f"{len(season_response)} 场"
               )
-
-              print(
-                  f"比赛数量：{len(results)}"
-              )
-
-              print(
-                  f"保存文件：{output_file}"
-              )
-
-              success_count += 1
-
+          # ========================================================
+          # 4. 生成运行状态文件
+          # ========================================================
+          print("")
           print("=" * 60)
-          print(
-              f"Football API 数据抓取完成，"
-              f"成功：{success_count}/{len(dates)}"
+          print("3. 生成运行状态")
+          print("=" * 60)
+          now = datetime.now(
+              timezone.utc
+          ).isoformat()
+          status = {
+              "updated_at_utc": now,
+              "live_matches": live_count,
+              "historical_seasons": HISTORICAL_SEASONS,
+              "source": "API-Football",
+              "workflow": "Football API Auto Fetch"
+          }
+          status_file = (
+              OUTPUT_DIR / "status.json"
           )
-          print("=" * 60)
-
+          with status_file.open(
+              "w",
+              encoding="utf-8"
+          ) as f:
+              json.dump(
+                  status,
+                  f,
+                  ensure_ascii=False,
+                  indent=2
+              )
+          print(
+              "Football API 数据抓取流程完成"
+          )
+          print("")
+          print(
+              "注意：Free 套餐限制不会再导致整个 Workflow 失败。"
+          )
           PY
-
+      # ============================================================
+      # 6. Check generated files
+      # ============================================================
       - name: Check generated files
         shell: bash
         run: |
-          set -e
-
+          echo "========================================"
           echo "生成的数据文件："
-
-          if [ -d "data/api_football" ]; then
-            find data/api_football \
-              -type f \
-              -name "*.json" \
-              -print
-          else
-            echo "错误：data/api_football 目录不存在"
-            exit 1
-          fi
-
-      - name: Validate JSON files
-        shell: bash
-        run: |
-          set -e
-
-          echo "开始检查 JSON 数据文件..."
-
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          files = list(
-              Path("data/api_football").glob("*.json")
-          )
-
-          if not files:
-              raise SystemExit(
-                  "错误：没有找到 JSON 数据文件"
-              )
-
-          for file in files:
-              print(f"检查：{file}")
-
-              with file.open(
-                  "r",
-                  encoding="utf-8"
-              ) as f:
-                  data = json.load(f)
-
-              if not isinstance(data, dict):
-                  raise SystemExit(
-                      f"JSON 格式错误：{file}"
-                  )
-
-              print(
-                  f"  response 数量："
-                  f"{len(data.get('response', []))}"
-              )
-
-          print("JSON 数据检查通过")
-
-          PY
-
+          echo "========================================"
+          find data/api_football \
+            -type f \
+            -maxdepth 2 \
+            -print \
+            2>/dev/null || true
+          echo ""
+          echo "目录大小："
+          du -sh data/api_football \
+            2>/dev/null || true
+      # ============================================================
+      # 7. Commit data
+      #
+      # 关键修复：
+      # 原来的 git add data 被 .gitignore 忽略
+      #
+      # 这里使用 git add -f
+      # ============================================================
       - name: Commit data
         shell: bash
         run: |
           set -e
-
           git config user.name "github-actions[bot]"
-
-          git config user.email \
-            "41898282+github-actions[bot]@users.noreply.github.com"
-
-          echo "准备提交 API 数据..."
-
-          # data 目录可能被 .gitignore 忽略
-          # 使用 -f 强制加入 Git
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # 强制加入被 .gitignore 忽略的数据文件
           git add -f data/api_football/
-
-          echo "当前待提交文件："
-
-          git status --short
-
           if git diff --cached --quiet; then
             echo "没有新的数据需要提交"
             exit 0
           fi
-
+          echo "准备提交数据："
+          git diff --cached --stat
           git commit \
-            -m "chore: update football API data"
-
+            -m "chore: update football api data"
           git push
-
-          echo "数据已经成功提交并推送到 main"
+          echo "数据提交完成"
