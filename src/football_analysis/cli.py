@@ -24,14 +24,23 @@ from .analysis.report import generate_report
 
 logger = logging.getLogger(__name__)
 
-HIST_MATCHES = os.getenv('HISTORICAL_MATCHES_PATH', './data/historical/matches.csv')
-HIST_ODDS = os.getenv('HISTORICAL_ODDS_PATH', './data/historical/odds.csv')
 REPORT_DIR = os.getenv('REPORT_DIR', 'reports')
 os.makedirs(REPORT_DIR, exist_ok=True)
 
 
+def _historical_odds_path():
+    """Dynamically read HISTORICAL_ODDS_PATH environment variable at runtime."""
+    return os.getenv('HISTORICAL_ODDS_PATH', './data/historical/odds.csv')
+
+
+def _historical_matches_path():
+    """Dynamically read HISTORICAL_MATCHES_PATH environment variable at runtime."""
+    return os.getenv('HISTORICAL_MATCHES_PATH', './data/historical/matches.csv')
+
+
 def cmd_inspect_csv(args):
-    path = args.path or HIST_ODDS
+    hist_odds = _historical_odds_path()
+    path = args.path or hist_odds
     if not os.path.exists(path):
         print('CSV not found:', path)
         return
@@ -63,6 +72,7 @@ def cmd_inspect_csv(args):
 
 
 def cmd_similar(args):
+    hist_odds = _historical_odds_path()
     # Build target dict
     target = {
         'home_odds': args.home_odds,
@@ -73,10 +83,10 @@ def cmd_similar(args):
         'timestamp': datetime.utcnow(),
         'league': getattr(args, 'league', None),
     }
-    if not os.path.exists(HIST_ODDS):
-        print('Historical odds CSV not found:', HIST_ODDS)
+    if not os.path.exists(hist_odds):
+        print('Historical odds CSV not found:', hist_odds)
         return
-    df = pd.read_csv(HIST_ODDS)
+    df = pd.read_csv(hist_odds)
     # enforce cutoff if provided
     cutoff = getattr(args, 'cutoff', None)
     if cutoff:
@@ -113,10 +123,12 @@ def _fixture_initial_current_from_odds(df_odds, fixture_id: str):
 
 
 def cmd_movement(args):
-    if not os.path.exists(HIST_ODDS):
-        print('Historical odds CSV not found:', HIST_ODDS)
+    hist_odds = _historical_odds_path()
+    hist_matches = _historical_matches_path()
+    if not os.path.exists(hist_odds):
+        print('Historical odds CSV not found:', hist_odds)
         return
-    df = pd.read_csv(HIST_ODDS)
+    df = pd.read_csv(hist_odds)
     initial = {'home_odds': args.open_home, 'draw_odds': args.open_draw, 'away_odds': args.open_away, 'handicap': getattr(args,'open_handicap', None)}
     current = {'home_odds': args.current_home, 'draw_odds': args.current_draw, 'away_odds': args.current_away, 'handicap': getattr(args,'current_handicap', None)}
     # build historical_changes from df by grouping fixtures
@@ -126,8 +138,8 @@ def cmd_movement(args):
         if init and cur:
             # find result from matches file if exists
             result = None
-            if os.path.exists(HIST_MATCHES):
-                md = pd.read_csv(HIST_MATCHES)
+            if os.path.exists(hist_matches):
+                md = pd.read_csv(hist_matches)
                 row = md[md['match_id'].astype(str) == str(fid)]
                 if not row.empty and 'result' in row.columns:
                     result = row.iloc[0].get('result')
@@ -140,16 +152,18 @@ def cmd_movement(args):
 
 
 def cmd_analyze(args):
+    hist_matches = _historical_matches_path()
+    hist_odds = _historical_odds_path()
     # high-level pipeline for a date
     date = args.date
     if not date:
         print('Please provide --date YYYY-MM-DD')
         return
     # load matches for date
-    if not os.path.exists(HIST_MATCHES):
-        print('Historical matches CSV not found:', HIST_MATCHES)
+    if not os.path.exists(hist_matches):
+        print('Historical matches CSV not found:', hist_matches)
         return
-    md = pd.read_csv(HIST_MATCHES)
+    md = pd.read_csv(hist_matches)
     md['date'] = pd.to_datetime(md['date'], errors='coerce')
     day = pd.to_datetime(date)
     matches = md[md['date'].dt.date == day.date()]
@@ -161,8 +175,8 @@ def cmd_analyze(args):
         # prepare cutoff - match start
         cutoff = row.get('date')
         # load historical odds and filter
-        if os.path.exists(HIST_ODDS):
-            od = pd.read_csv(HIST_ODDS)
+        if os.path.exists(hist_odds):
+            od = pd.read_csv(hist_odds)
             # ensure timestamp parsed
             try:
                 od['timestamp'] = pd.to_datetime(od['timestamp'])
@@ -191,12 +205,13 @@ def cmd_analyze(args):
 
 
 def cmd_backtest(args):
+    hist_matches = _historical_matches_path()
     # wrapper to call analysis.backtest on provided historical CSV
     from .analysis.backtest import backtest
-    if not os.path.exists(HIST_MATCHES):
-        print('Historical matches CSV not found:', HIST_MATCHES)
+    if not os.path.exists(hist_matches):
+        print('Historical matches CSV not found:', hist_matches)
         return
-    md = pd.read_csv(HIST_MATCHES)
+    md = pd.read_csv(hist_matches)
     # build simple historical_matches list expected by backtest
     hist = []
     for _, r in md.iterrows():
