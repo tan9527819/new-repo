@@ -11,7 +11,6 @@ permissions:
 jobs:
   fetch:
     runs-on: ubuntu-latest
-    environment: football-api
 
     steps:
       - name: Checkout
@@ -27,52 +26,36 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests
 
+      - name: Check API Key
+        env:
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+        run: |
+          if [ -z "$API_FOOTBALL_KEY" ]; then
+            echo "错误：API_FOOTBALL_KEY 没有读取到"
+            echo "请检查 GitHub Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+
+          echo "API Key 已成功读取"
+
       - name: Fetch Football API
         env:
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
         run: |
           DATE=$(date -u +%Y-%m-%d)
 
-          echo "================================"
-          echo "开始抓取日期: ${DATE}"
-          echo "================================"
-
-          if [ -z "$API_FOOTBALL_KEY" ]; then
-            echo "错误：API_FOOTBALL_KEY 没有读取到"
-            exit 1
-          fi
+          echo "开始抓取日期：$DATE"
 
           mkdir -p 数据
 
-          curl \
+          curl --fail-with-body \
             --request GET \
             --url "https://v3.football.api-sports.io/fixtures?date=${DATE}" \
             --header "x-apisports-key: ${API_FOOTBALL_KEY}" \
-            --output "数据/fixtures_${DATE}.json" \
-            --write-out "\nHTTP_STATUS=%{http_code}\n" \
-            --silent \
-            --show-error
+            --header "Accept: application/json" \
+            --output "数据/fixtures_${DATE}.json"
 
-          echo "================================"
-          echo "API 数据已获取"
-          echo "================================"
-
-          echo "数据文件："
-          ls -lh "数据/fixtures_${DATE}.json"
-
-          echo "数据预览："
-          head -c 1000 "数据/fixtures_${DATE}.json"
-
-      - name: Check API response
-        run: |
-          DATE=$(date -u +%Y-%m-%d)
-
-          if [ ! -s "数据/fixtures_${DATE}.json" ]; then
-            echo "错误：API 返回文件为空"
-            exit 1
-          fi
-
-          echo "数据文件检查通过"
+          echo "抓取成功：数据/fixtures_${DATE}.json"
 
       - name: Commit Data
         run: |
