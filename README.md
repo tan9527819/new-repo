@@ -8,7 +8,7 @@
 - 赔率变盘（盘路）分析与可视化；
 - 使用泊松分布进行进球率估计与校准（Poisson calibration）。
 
-本仓库仅包含项目骨架、示例脚本与说明，便于后续开发与迭代。
+本仓库包含项目骨架、示例脚本与说明，便于后续开发与迭代。
 
 快速开始
 
@@ -30,11 +30,12 @@
 4. 配置环境变量（参考 .env.example）：
 
    export API_FOOTBALL_KEY="your_api_football_key"
-   export ODDS_DB_PATH="./data/odds_history.csv"
+   export API_FOOTBALL_BASE_URL="https://v3.football.api-sports.io"
+   export HISTORICAL_DATA_PATH="./data/odds_history.csv"
 
-5. 示例：拉取数据并保存为 CSV（后续需要完善）：
+5. 示例：读取历史 CSV 并列出最近比赛：
 
-   python -m football_analysis.data.ingest
+   python -c "from football_analysis.data import repository; print(repository.load_matches(10)[:3])"
 
 项目结构说明
 
@@ -47,21 +48,32 @@
 - notebooks/                    实验与可视化 notebook
   - README.md
 - src/football_analysis/        Python 包源码（主开发目录）
+  - api/                        API-Football 客户端与资源封装
   - data/                       数据拉取、清洗、存储模块
-    - ingest.py                 拉取 API-Football 与保存到 CSV 的示例脚本
   - analysis/                   赔率/模型分析模块
-    - odds_analysis.py         赔率变盘与相似盘型分析的占位文件
-    - poisson.py               泊松模型与校准的占位文件
 
-开发与贡献
+当前已实现（第一阶段）
 
-- 建议在 feature 分支上开发并通过 Pull Request 合并到 main。
-- 将 API 密钥放在本地环境变量或 .env（不要把实际密钥提交到仓库）。
+- API-Football 客户端基础实现（支持请求、超时、重试，读取 API_KEY 来自环境变量）
+- 历史赔率 CSV Loader：自动识别常见列名、基础清洗并给出缺失提示（不修改原 CSV）
+- 数据标准化：MatchRecord dataclass
+- 历史数据接口（基于 pandas）：load_matches / find_similar_matches / find_same_odds / get_recent_results
+- 单元测试骨架（pytest）
 
-下一步建议
+如何运行测试
 
-- 将 API-Football 的数据拉取逻辑补全并做重试/限流处理；
-- 设计 CSV 的列与索引格式并实现增量更新；
-- 实现相似盘型检索的向量化方法（如基于赔率比、对数差值或 embedding）；
-- 增加测试目录与 CI（例如 GitHub Actions）用于自动化测试与 lint。
+- 在虚拟环境中安装依赖后运行：
+  pytest -q
+
+下一阶段建议
+
+- 补全 API-Football 各资源的字段映射与分页
+- 为历史 CSV 添加增量写入工具（append with dedupe）或迁移到 SQLite
+- 实现更高级的相似度匹配（向量化、近似最近邻）
+- 添加 CI（GitHub Actions）自动化测试
+
+安全与注意事项
+
+- API_KEY 仅来自环境变量，代码中不会包含真实密钥。
+- .env 文件应加入 .gitignore，不要提交真实密钥。
 
