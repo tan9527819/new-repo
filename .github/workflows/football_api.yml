@@ -31,15 +31,43 @@ jobs:
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
         run: |
           DATE=$(date -u +%Y-%m-%d)
+
           mkdir -p 数据
 
-          curl --fail \
+          echo "开始抓取日期: ${DATE}"
+
+          if [ -z "$API_FOOTBALL_KEY" ]; then
+            echo "错误：API_FOOTBALL_KEY 没有读取到"
+            exit 1
+          fi
+
+          curl \
             --request GET \
             --url "https://v3.football.api-sports.io/fixtures?date=${DATE}" \
             --header "x-apisports-key: ${API_FOOTBALL_KEY}" \
-            --output "数据/fixtures_${DATE}.json"
+            --output "数据/fixtures_${DATE}.json" \
+            --write-out "HTTP_STATUS=%{http_code}\n" \
+            --silent \
+            --show-error
 
+          echo ""
+          echo "API 返回内容："
+          cat "数据/fixtures_${DATE}.json"
+
+          echo ""
           echo "已抓取 ${DATE} 的比赛数据"
+
+      - name: Check API response
+        run: |
+          DATE=$(date -u +%Y-%m-%d)
+
+          if [ ! -s "数据/fixtures_${DATE}.json" ]; then
+            echo "错误：API 返回文件为空"
+            exit 1
+          fi
+
+          echo "数据文件检查通过"
+          ls -lh "数据/fixtures_${DATE}.json"
 
       - name: Commit Data
         run: |
