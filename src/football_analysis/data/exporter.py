@@ -9,7 +9,8 @@ import os
 from .models import MatchRecord, OddsRecord
 
 
-HIST_DIR = Path(os.getenv('HISTORICAL_DATA_PATH', './data/historical')).parent / 'historical'
+# Use HISTORICAL_DIR env if provided, else default
+HIST_DIR = Path(os.getenv('HISTORICAL_DIR', './data/historical'))
 HIST_DIR.mkdir(parents=True, exist_ok=True)
 MATCHES_CSV = HIST_DIR / 'matches.csv'
 ODDS_CSV = HIST_DIR / 'odds.csv'
@@ -17,13 +18,16 @@ ODDS_CSV = HIST_DIR / 'odds.csv'
 
 def _ensure_df(cols, path: Path):
     if path.exists():
-        return pd.read_csv(path)
+        try:
+            return pd.read_csv(path)
+        except Exception:
+            return pd.DataFrame(columns=cols)
     else:
         return pd.DataFrame(columns=cols)
 
 
 def export_matches(records: List[MatchRecord], path: Path = MATCHES_CSV):
-    cols = ['match_id', 'date', 'league', 'season', 'home_team', 'away_team', 'status', 'home_odds', 'draw_odds', 'away_odds', 'handicap', 'handicap_home_odds', 'handicap_away_odds', 'source']
+    cols = ['match_id', 'date', 'league', 'season', 'home_team', 'away_team', 'status', 'home_odds', 'draw_odds', 'away_odds', 'handicap', 'handicap_home_odds', 'handicap_away_odds', 'source', 'result', 'home_score', 'away_score']
     df_existing = _ensure_df(cols, path)
     df_new = pd.DataFrame([r.to_dict() for r in records])
     if df_new.empty:
